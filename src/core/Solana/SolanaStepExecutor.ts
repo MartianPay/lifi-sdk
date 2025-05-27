@@ -13,7 +13,10 @@ import type { LiFiStepExtended, TransactionParameters } from '../types.js'
 import { waitForDestinationChainTransaction } from '../waitForDestinationChainTransaction.js'
 import { callSolanaWithRetry } from './connection.js'
 import { parseSolanaErrors } from './parseSolanaErrors.js'
-import { sendAndConfirmTransaction } from './sendAndConfirmTransaction.js'
+import {
+  type ConfirmedTransactionResult,
+  sendAndConfirmTransaction,
+} from './sendAndConfirmTransaction.js'
 import type { SolanaStepExecutorOptions } from './types.js'
 
 export class SolanaStepExecutor extends BaseStepExecutor {
@@ -158,7 +161,32 @@ export class SolanaStepExecutor extends BaseStepExecutor {
           )
         }
 
-        const confirmedTx = await sendAndConfirmTransaction(signedTx)
+        let confirmedTx: ConfirmedTransactionResult
+        try {
+          if (this.walletAdapter.name === 'Fireblocks Solana Wallet') {
+            const connection = await callSolanaWithRetry((conn) =>
+              Promise.resolve(conn)
+            )
+            const tx = await this.walletAdapter.sendTransaction(
+              signedTx,
+              connection
+            )
+
+            confirmedTx = {
+              signatureResult: { err: null },
+              txSignature: tx,
+            }
+          } else {
+            confirmedTx = await sendAndConfirmTransaction(signedTx)
+          }
+        } catch (error: any) {
+          confirmedTx = {
+            signatureResult: {
+              err: error instanceof Error ? error.message : String(error),
+            },
+            txSignature: '',
+          }
+        }
 
         if (!confirmedTx.signatureResult) {
           throw new TransactionError(
